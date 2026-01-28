@@ -18,14 +18,14 @@ import {
 	try {
 		setupDirectories();
 		createDefaultMiddlewares();
-		await initializeSwarm();
-		await initializeNetwork();
+		// await initializeSwarm();
+		// await initializeNetwork();
 		createDefaultTraefikConfig();
 		createDefaultServerTraefikConfig();
-		await execAsync("docker pull traefik:v3.6.1");
-		await initializeStandaloneTraefik();
-		await initializeRedis();
-		await initializePostgres();
+		// await execAsync("docker pull traefik:v3.6.1");
+		// await initializeStandaloneTraefik();
+		// await initializeRedis();
+		// await initializePostgres();
 		console.log("Dokploy setup completed");
 		exit(0);
 	} catch (e) {

@@ -200,11 +200,12 @@ export const deployApplication = async ({
 
 		command += await getBuildCommand(application);
 
-		const commandWithLog = `(${command}) >> ${deployment.logPath} 2>&1`;
+		const logPath = deployment.logPath.replace(/\\/g, "/").replace(/^([a-zA-Z]):/, (_, d) => `/mnt/${d.toLowerCase()}`);
+		const commandWithLog = `(${command}) >> ${logPath} 2>&1`;
 		if (serverId) {
 			await execAsyncRemote(serverId, commandWithLog);
 		} else {
-			await execAsync(commandWithLog);
+			await execAsync(commandWithLog, { shell: "bash" });
 		}
 
 		await mechanizeDockerContainer(application);
@@ -227,14 +228,14 @@ export const deployApplication = async ({
 		if (!(error instanceof ExecError)) {
 			const message = error instanceof Error ? error.message : String(error);
 			const encodedMessage = encodeBase64(message);
-			command += `echo "${encodedMessage}" | base64 -d >> "${deployment.logPath}";`;
+			command += `echo "${encodedMessage}" | base64 -d >> "${deployment.logPath.replace(/\\/g, "/").replace(/^([a-zA-Z]):/, (_, d) => `/mnt/${d.toLowerCase()}`)}";`;
 		}
 
-		command += `echo "\nError occurred ❌, check the logs for details." >> ${deployment.logPath};`;
+		command += `echo "\nError occurred ❌, check the logs for details." >> ${deployment.logPath.replace(/\\/g, "/").replace(/^([a-zA-Z]):/, (_, d) => `/mnt/${d.toLowerCase()}`)};`;
 		if (serverId) {
 			await execAsyncRemote(serverId, command);
 		} else {
-			await execAsync(command);
+			await execAsync(command, { shell: "bash" });
 		}
 		await updateDeploymentStatus(deployment.deploymentId, "error");
 		await updateApplicationStatus(applicationId, "error");
@@ -289,11 +290,12 @@ export const rebuildApplication = async ({
 		let command = "set -e;";
 		// Check case for docker only
 		command += await getBuildCommand(application);
-		const commandWithLog = `(${command}) >> ${deployment.logPath} 2>&1`;
+		const logPath = deployment.logPath.replace(/\\/g, "/").replace(/^([a-zA-Z]):/, (_, d) => `/mnt/${d.toLowerCase()}`);
+		const commandWithLog = `(${command}) >> ${logPath} 2>&1`;
 		if (serverId) {
 			await execAsyncRemote(serverId, commandWithLog);
 		} else {
-			await execAsync(commandWithLog);
+			await execAsync(commandWithLog, { shell: "bash" });
 		}
 		await mechanizeDockerContainer(application);
 		await updateDeploymentStatus(deployment.deploymentId, "done");
@@ -315,14 +317,14 @@ export const rebuildApplication = async ({
 		if (!(error instanceof ExecError)) {
 			const message = error instanceof Error ? error.message : String(error);
 			const encodedMessage = encodeBase64(message);
-			command += `echo "${encodedMessage}" | base64 -d >> "${deployment.logPath}";`;
+			command += `echo "${encodedMessage}" | base64 -d >> "${deployment.logPath.replace(/\\/g, "/").replace(/^([a-zA-Z]):/, (_, d) => `/mnt/${d.toLowerCase()}`)}";`;
 		}
 
-		command += `echo "\nError occurred ❌, check the logs for details." >> ${deployment.logPath};`;
+		command += `echo "\nError occurred ❌, check the logs for details." >> ${deployment.logPath.replace(/\\/g, "/").replace(/^([a-zA-Z]):/, (_, d) => `/mnt/${d.toLowerCase()}`)};`;
 		if (serverId) {
 			await execAsyncRemote(serverId, command);
 		} else {
-			await execAsync(command);
+			await execAsync(command, { shell: "bash" });
 		}
 		await updateDeploymentStatus(deployment.deploymentId, "error");
 		await updateApplicationStatus(applicationId, "error");
@@ -415,11 +417,12 @@ export const deployPreviewApplication = async ({
 			});
 			command += await getBuildCommand(application);
 
-			const commandWithLog = `(${command}) >> ${deployment.logPath} 2>&1`;
+			const logPath = deployment.logPath.replace(/\\/g, "/").replace(/^([a-zA-Z]):/, (_, d) => `/mnt/${d.toLowerCase()}`);
+			const commandWithLog = `(${command}) >> ${logPath} 2>&1`;
 			if (application.serverId) {
 				await execAsyncRemote(application.serverId, commandWithLog);
 			} else {
-				await execAsync(commandWithLog);
+				await execAsync(commandWithLog, { shell: "bash" });
 			}
 			await mechanizeDockerContainer(application);
 		}
@@ -529,11 +532,12 @@ export const rebuildPreviewApplication = async ({
 		let command = "set -e;";
 		// Only rebuild, don't clone repository
 		command += await getBuildCommand(application);
-		const commandWithLog = `(${command}) >> ${deployment.logPath} 2>&1`;
+		const logPath = deployment.logPath.replace(/\\/g, "/").replace(/^([a-zA-Z]):/, (_, d) => `/mnt/${d.toLowerCase()}`);
+		const commandWithLog = `(${command}) >> ${logPath} 2>&1`;
 		if (serverId) {
 			await execAsyncRemote(serverId, commandWithLog);
 		} else {
-			await execAsync(commandWithLog);
+			await execAsync(commandWithLog, { shell: "bash" });
 		}
 		await mechanizeDockerContainer(application);
 
@@ -557,15 +561,15 @@ export const rebuildPreviewApplication = async ({
 		if (!(error instanceof ExecError)) {
 			const message = error instanceof Error ? error.message : String(error);
 			const encodedMessage = encodeBase64(message);
-			command += `echo "${encodedMessage}" | base64 -d >> "${deployment.logPath}";`;
+			command += `echo "${encodedMessage}" | base64 -d >> "${deployment.logPath.replace(/\\/g, "/").replace(/^([a-zA-Z]):/, (_, d) => `/mnt/${d.toLowerCase()}`)}";`;
 		}
 
-		command += `echo "\nError occurred ❌, check the logs for details." >> ${deployment.logPath};`;
+		command += `echo "\nError occurred ❌, check the logs for details." >> ${deployment.logPath.replace(/\\/g, "/").replace(/^([a-zA-Z]):/, (_, d) => `/mnt/${d.toLowerCase()}`)};`;
 		const serverId = application.buildServerId || application.serverId;
 		if (serverId) {
 			await execAsyncRemote(serverId, command);
 		} else {
-			await execAsync(command);
+			await execAsync(command, { shell: "bash" });
 		}
 
 		const comment = getIssueComment(application.name, "error", previewDomain);

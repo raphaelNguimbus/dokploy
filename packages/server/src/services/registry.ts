@@ -3,6 +3,7 @@ import { type apiCreateRegistry, registry } from "@dokploy/server/db/schema";
 import {
 	execAsync,
 	execAsyncRemote,
+	execFileAsync,
 } from "@dokploy/server/utils/process/execAsync";
 import { TRPCError } from "@trpc/server";
 import { eq } from "drizzle-orm";
@@ -53,15 +54,25 @@ export const createRegistry = async (
 				message: "Select a server to add the registry",
 			});
 		}
-		const loginCommand = safeDockerLoginCommand(
-			input.registryUrl,
-			input.username,
-			input.password,
-		);
 		if (input.serverId && input.serverId !== "none") {
+			const loginCommand = safeDockerLoginCommand(
+				input.registryUrl,
+				input.username,
+				input.password,
+			);
 			await execAsyncRemote(input.serverId, loginCommand);
 		} else if (newRegistry.registryType === "cloud") {
-			await execAsync(loginCommand);
+			await execFileAsync(
+				"docker",
+				[
+					"login",
+					input.registryUrl || "",
+					"-u",
+					input.username || "",
+					"--password-stdin",
+				],
+				{ input: input.password || "" },
+			);
 		}
 
 		return newRegistry;
@@ -111,27 +122,25 @@ export const updateRegistry = async (
 			.returning()
 			.then((res) => res[0]);
 
-		const loginCommand = safeDockerLoginCommand(
-			response?.registryUrl,
-			response?.username,
-			response?.password,
-		);
-
-		if (
-			IS_CLOUD &&
-			!registryData?.serverId &&
-			registryData?.serverId !== "none"
-		) {
-			throw new TRPCError({
-				code: "NOT_FOUND",
-				message: "Select a server to add the registry",
-			});
-		}
-
 		if (registryData?.serverId && registryData?.serverId !== "none") {
+			const loginCommand = safeDockerLoginCommand(
+				response?.registryUrl,
+				response?.username,
+				response?.password,
+			);
 			await execAsyncRemote(registryData.serverId, loginCommand);
 		} else if (response?.registryType === "cloud") {
-			await execAsync(loginCommand);
+			await execFileAsync(
+				"docker",
+				[
+					"login",
+					response?.registryUrl || "",
+					"-u",
+					response?.username || "",
+					"--password-stdin",
+				],
+				{ input: response?.password || "" },
+			);
 		}
 
 		return response;

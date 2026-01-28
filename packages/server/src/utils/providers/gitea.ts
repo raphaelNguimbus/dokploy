@@ -160,7 +160,9 @@ export const cloneGiteaRepository = async ({
 	}
 
 	const basePath = type === "compose" ? COMPOSE_PATH : APPLICATIONS_PATH;
-	const outputPath = join(basePath, appName, "code");
+	const outputPath = join(basePath, appName, "code")
+		.replace(/\\/g, "/")
+		.replace(/^([a-zA-Z]):/, (_, d) => `/mnt/${d.toLowerCase()}`);
 	command += `rm -rf ${outputPath};`;
 	command += `mkdir -p ${outputPath};`;
 

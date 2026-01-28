@@ -21,7 +21,10 @@ export const getDockerCommand = (application: ApplicationNested) => {
 		cleanCache,
 		createEnvFile,
 	} = application;
-	const dockerFilePath = getBuildAppDirectory(application);
+
+	const dockerFilePath = getBuildAppDirectory(application)
+		.replace(/\\/g, "/")
+		.replace(/^([a-zA-Z]):/, (_, d) => `/mnt/${d.toLowerCase()}`);
 
 	try {
 		const image = application.customImageName || `${appName}`;
@@ -29,10 +32,15 @@ export const getDockerCommand = (application: ApplicationNested) => {
 		const defaultContextPath =
 			dockerFilePath.substring(0, dockerFilePath.lastIndexOf("/") + 1) || ".";
 
-		const dockerContextPath =
-			getDockerContextPath(application) || defaultContextPath;
+		const dockerContextPath = (
+			getDockerContextPath(application) || defaultContextPath
+		)
+			.replace(/\\/g, "/")
+			.replace(/^([a-zA-Z]):/, (_, d) => `/mnt/${d.toLowerCase()}`);
 
 		const commandArgs = ["build", "-t", image, "-f", dockerFilePath, "."];
+		// Disable provenance to avoid extra registry artifacts
+		commandArgs.push("--provenance=false");
 
 		if (dockerBuildStage) {
 			commandArgs.push("--target", dockerBuildStage);
