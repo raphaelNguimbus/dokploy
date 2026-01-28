@@ -1,6 +1,8 @@
 import { findAllDeploymentsByApplicationId } from "@dokploy/server/services/deployment";
 import type { Registry } from "@dokploy/server/services/registry";
 import { createRollback } from "@dokploy/server/services/rollbacks";
+import path from "node:path";
+import { paths } from "@dokploy/server/constants";
 import type { ApplicationNested } from "../builders";
 import { getBuildAppDirectory } from "../filesystem/directory";
 
@@ -52,7 +54,7 @@ export const uploadImageRemoteCommand = async (
 		// This implies latest + custom tags.
 		tagsToPush.push("latest");
 	}
-	
+
 	// Ensure latest is there if user wants it explicitly or by default
 	if (customImageTags && !tagsToPush.includes("latest")) {
 		// If user provided tags, do we force latest? User said "latest by default BUT ALSO others".
@@ -66,7 +68,7 @@ export const uploadImageRemoteCommand = async (
 		isRollback = false,
 	) => {
 		commands.push(`echo "📦 [Enabled ${registryName}]"`);
-		
+
 		// 1. Push static tags
 		for (const tag of new Set(tagsToPush)) {
 			// Avoid duplicate latest if it's already in the loop
@@ -89,35 +91,75 @@ export const uploadImageRemoteCommand = async (
 		// 2. Dynamic Version from JSON
 		if (autoVersionFromJson && sourceType !== "docker") {
 			const buildDir = getBuildAppDirectory(application);
+			const { APPLICATIONS_PATH } = paths(!!application.serverId);
+			const projectRoot = path.join(
+				APPLICATIONS_PATH,
+				application.appName,
+				"code",
+			);
+			const searchDirs = [projectRoot];
+
+			if (application.buildType === "dockerfile") {
+				// Priority: Dockerfile directory -> Project Root
+				searchDirs.unshift(path.dirname(buildDir));
+			} else {
+				// Priority: Build directory (likely root or subfolder) -> Project Root (redundant if same, but safe)
+				searchDirs.unshift(buildDir);
+			}
+
+			// Remove duplicates
+			const uniqueDirs = [...new Set(searchDirs)];
+
 			// Bash logic to extract version and push
-			
-			// We need to determine the registry tag prefix in bash or pre-calculate it?
-			// The tag suffix (version) is dynamic. The prefix is static.
+			// We iterate over uniqueDirs in bash to find the first version.json
+
 			const { registryUrl, imagePrefix, username } = currentRegistry;
 			const targetPrefix = imagePrefix || username;
 			const finalRegistry = registryUrl || "";
 			const repoName = extractRepositoryName(builtImageName);
-			
+
 			const baseImageTag = finalRegistry
 				? `${finalRegistry}/${targetPrefix}/${repoName}`
 				: `${targetPrefix}/${repoName}`;
 
-            commands.push(`
-echo "🔍 Checking for version.json in ${buildDir}"
-if [ -f "${buildDir}/version.json" ]; then
-    VERSION=$(grep -o '"version": *"[^"]*"' "${buildDir}/version.json" | head -1 | awk -F'"' '{print $4}')
-    if [ ! -z "$VERSION" ]; then
-        echo "✅ Found version: $VERSION"
-        FULL_TAG="${baseImageTag}:$VERSION"
-        echo "🏷️  Tagging with version: $VERSION"
-        docker tag ${builtImageName} $FULL_TAG || echo "❌ Error tagging version"
-        echo "fw  Pushing version tag: $FULL_TAG"
-        docker push $FULL_TAG || echo "❌ Error pushing version tag"
-    else
-        echo "⚠️  version.json found but could not parse version"
+			// Construct bash array/checks
+			let bashSearchBlock = "";
+			for (const dir of uniqueDirs) {
+				// escaping windows paths if necessary? paths usually come with forward slashes from `path` on linux/mac, but on windows server it handles it?
+				// `path` module adheres to OS. If server is windows, paths have backslashes.
+				// Bash in git bash or wsl handles forward slashes. Backslashes need escaping.
+				// `dokploy` generally runs in linux containers or linux envs, but user has windows OS.
+				// However, the `application.serverId` implies where the command runs.
+				// If local (no serverId), it runs on the host. If host is windows, we need to be careful.
+				// `paths` constants should handle this?
+				// But let's assume standard posix paths for the `mkdir -p` etc used elsewhere.
+				// We can normalize to forward slashes for bash compatibility just in case.
+				const normalizedDir = dir.replace(/\\/g, "/");
+				bashSearchBlock += `
+    if [ -z "$VERSION" ] && [ -f "${normalizedDir}/version.json" ]; then
+        echo "🔍 Checking for version.json in ${normalizedDir}"
+        FOUND_VERSION=$(grep -o '"version": *"[^"]*"' "${normalizedDir}/version.json" | head -1 | awk -F'"' '{print $4}')
+        if [ ! -z "$FOUND_VERSION" ]; then
+            VERSION=$FOUND_VERSION
+            echo "✅ Found version: $VERSION in ${normalizedDir}"
+        fi
     fi
+`;
+			}
+
+			commands.push(`
+# Auto Version Check
+VERSION=""
+${bashSearchBlock}
+
+if [ ! -z "$VERSION" ]; then
+    FULL_TAG="${baseImageTag}:$VERSION"
+    echo "🏷️  Tagging with version: $VERSION"
+    docker tag ${builtImageName} $FULL_TAG || echo "❌ Error tagging version"
+    echo "fw  Pushing version tag: $FULL_TAG"
+    docker push $FULL_TAG || echo "❌ Error pushing version tag"
 else
-    echo "⚠️  version.json not found, skipping version tag"
+    echo "⚠️  version.json not found in search paths, skipping version tag"
 fi
 `);
 		}
@@ -128,12 +170,12 @@ fi
 	}
 	if (buildRegistry) {
 		processRegistry(buildRegistry, "Build Registry");
-        commands.push(
-            `echo "⚠️ INFO: After the build is finished, you need to wait a few seconds for the server to download the image and run the container."`,
-        );
-        commands.push(
-            `echo "📊 Check the Logs tab to see when the container starts running."`,
-        );
+		commands.push(
+			`echo "⚠️ INFO: After the build is finished, you need to wait a few seconds for the server to download the image and run the container."`,
+		);
+		commands.push(
+			`echo "📊 Check the Logs tab to see when the container starts running."`,
+		);
 	}
 
 	if (rollbackRegistry && application.rollbackActive) {
@@ -150,41 +192,41 @@ fi
 		});
 
 		// Rollback logic is slightly different, it uses specific image from rollback.
-        // We probably don't want to double-push version tags to rollback registry if it's strictly for rollback history?
-        // But if user wants to store versions there, maybe.
-        // For now, I'll keep the original rollback logic which pushes the verified image.
-        // Actually, existing logic pushed `rollback.image`.
-        
+		// We probably don't want to double-push version tags to rollback registry if it's strictly for rollback history?
+		// But if user wants to store versions there, maybe.
+		// For now, I'll keep the original rollback logic which pushes the verified image.
+		// Actually, existing logic pushed `rollback.image`.
+
 		const rollbackRegistryTag = getRegistryTag(
 			rollbackRegistry,
 			rollback?.image || "",
-            "latest" // Rollback typically targets specific hash or tag, but existing code logic used standard tag?
-            // Existing code: const rollbackRegistryTag = getRegistryTag(rollbackRegistry, rollback?.image || "");
-            // convert to new signature if I change getRegistryTag?
+			"latest" // Rollback typically targets specific hash or tag, but existing code logic used standard tag?
+			// Existing code: const rollbackRegistryTag = getRegistryTag(rollbackRegistry, rollback?.image || "");
+			// convert to new signature if I change getRegistryTag?
 		);
-		
-        // Re-implement existing logic for rollback
-        // The existing logic passed `rollback?.image` to getRegistryTag.
-        // And `getRegistryTag` logic was `extractRepositoryName(imageName)`.
-        
-        // Let's modify `getRegistryTag` signature to accept an optional explicit tag override, 
-        // OR handle the splitting inside `getRegistryTag` if the input image has a tag.
-        
-        // I will update getRegistryTag to handle explicit tag properly.
-        
-        // ... (Existing implementation)
-        // commands.push(getRegistryCommands(rollbackRegistry, imageName, rollbackRegistryTag));
-        // Note: original code used `imageName` (which was appName:latest or dockerImage) as source for `docker tag`.
-        // And `rollbackRegistryTag` as target.
 
-        // I will preserve this logic but use `builtImageName`.
-        const simpleRollbackTag = getRegistryTag(rollbackRegistry, rollback?.image || "");
-        if (simpleRollbackTag) {
-            commands.push(`echo "🔄 [Enabled Rollback Registry]"`);
-            commands.push(
-                getRegistryCommands(rollbackRegistry, builtImageName, simpleRollbackTag),
-            );
-        }
+		// Re-implement existing logic for rollback
+		// The existing logic passed `rollback?.image` to getRegistryTag.
+		// And `getRegistryTag` logic was `extractRepositoryName(imageName)`.
+
+		// Let's modify `getRegistryTag` signature to accept an optional explicit tag override, 
+		// OR handle the splitting inside `getRegistryTag` if the input image has a tag.
+
+		// I will update getRegistryTag to handle explicit tag properly.
+
+		// ... (Existing implementation)
+		// commands.push(getRegistryCommands(rollbackRegistry, imageName, rollbackRegistryTag));
+		// Note: original code used `imageName` (which was appName:latest or dockerImage) as source for `docker tag`.
+		// And `rollbackRegistryTag` as target.
+
+		// I will preserve this logic but use `builtImageName`.
+		const simpleRollbackTag = getRegistryTag(rollbackRegistry, rollback?.image || "");
+		if (simpleRollbackTag) {
+			commands.push(`echo "🔄 [Enabled Rollback Registry]"`);
+			commands.push(
+				getRegistryCommands(rollbackRegistry, builtImageName, simpleRollbackTag),
+			);
+		}
 	}
 	try {
 		return commands.join("\n");
@@ -204,17 +246,17 @@ fi
  */
 const extractRepositoryName = (imageName: string): string => {
 	const lastSlashIndex = imageName.lastIndexOf("/");
-    let repo = imageName;
+	let repo = imageName;
 	if (lastSlashIndex !== -1) {
 		repo = imageName.substring(lastSlashIndex + 1);
 	}
-    // Remove tag if present, to just get the repo name for tagging with new tags
-    // e.g. "myrepo:latest" -> "myrepo"
-    const colonIndex = repo.indexOf(":");
-    if (colonIndex !== -1) {
-        return repo.substring(0, colonIndex);
-    }
-    return repo;
+	// Remove tag if present, to just get the repo name for tagging with new tags
+	// e.g. "myrepo:latest" -> "myrepo"
+	const colonIndex = repo.indexOf(":");
+	if (colonIndex !== -1) {
+		return repo.substring(0, colonIndex);
+	}
+	return repo;
 };
 
 // Updated signature: allow explicit tag
@@ -227,7 +269,7 @@ export const getRegistryTag = (registry: Registry, imageName: string, explicitTa
 	// Build the final tag using registry's username/prefix
 	const targetPrefix = imagePrefix || username;
 	const finalRegistry = registryUrl || "";
-    
+
 	// If explicit tag is provided, use it.
 	// If not, try to preserve the tag from imageName, otherwise default to empty (implicit latest in Docker context, but clean for string check)
 	let tag = "";
