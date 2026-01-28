@@ -140,6 +140,7 @@ export const environmentRouter = createTRPCRouter({
 
 				return environment;
 			} catch (error) {
+				console.error("Error fetching environment:", error);
 				throw new TRPCError({
 					code: "NOT_FOUND",
 					message: "Environment not found",

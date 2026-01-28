@@ -2,6 +2,7 @@ import { findAllDeploymentsByApplicationId } from "@dokploy/server/services/depl
 import type { Registry } from "@dokploy/server/services/registry";
 import { createRollback } from "@dokploy/server/services/rollbacks";
 import type { ApplicationNested } from "../builders";
+import { getBuildAppDirectory } from "../filesystem/directory";
 
 export const uploadImageRemoteCommand = async (
 	application: ApplicationNested,
@@ -9,39 +10,130 @@ export const uploadImageRemoteCommand = async (
 	const registry = application.registry;
 	const buildRegistry = application.buildRegistry;
 	const rollbackRegistry = application.rollbackRegistry;
+	const {
+		customImageTags,
+		autoVersionFromJson,
+		appName,
+		customImageName,
+		sourceType,
+	} = application;
 
 	if (!registry && !buildRegistry && !rollbackRegistry) {
 		throw new Error("No registry found");
 	}
 
-	const { appName } = application;
+	const image = customImageName || `${appName}`;
+	// Original logic used latest if no dockerImage, but here we use the image name we just built.
+	// If sourceType is docker, we might use dockerImage.
 	const imageName =
-		application.sourceType === "docker"
+		sourceType === "docker"
 			? application.dockerImage || ""
-			: `${appName}:latest`;
+			: `${image}:latest`; // We assume the build step tagged it as :latest?
+	// Actually in docker-file.ts we did: build -t image ...
+	// If image has no tag, docker adds :latest.
+	// But in docker-file.ts I used: const image = application.customImageName || `${appName}`;
+	// If customImageName is "my/image:v1", then we should respect it.
+	// But commonly intermediate image is tagged latest or just name.
+	// Let's assume the build resulted in `image` (from logic above).
+	// If I built `myimage`, it is `myimage:latest`.
+
+	// We need to reference the image that was just built.
+	const builtImageName = customImageName || appName;
 
 	const commands: string[] = [];
-	if (registry) {
-		const registryTag = getRegistryTag(registry, imageName);
-		if (registryTag) {
-			commands.push(`echo "📦 [Enabled Registry Swarm]"`);
-			commands.push(getRegistryCommands(registry, imageName, registryTag));
+	const tagsToPush: string[] = [];
+
+	if (customImageTags) {
+		const tags = customImageTags.split(",").map((t: string) => t.trim());
+		tagsToPush.push(...tags);
+	} else {
+		// Default behavior: push latest if NO custom tags?
+		// User said: "latest par defaut mais aussi d'autre tags".
+		// This implies latest + custom tags.
+		tagsToPush.push("latest");
+	}
+	
+	// Ensure latest is there if user wants it explicitly or by default
+	if (customImageTags && !tagsToPush.includes("latest")) {
+		// If user provided tags, do we force latest? User said "latest by default BUT ALSO others".
+		// Interpreting as: Always push latest, AND push others.
+		tagsToPush.push("latest");
+	}
+
+	const processRegistry = (
+		currentRegistry: Registry,
+		registryName: string,
+		isRollback = false,
+	) => {
+		commands.push(`echo "📦 [Enabled ${registryName}]"`);
+		
+		// 1. Push static tags
+		for (const tag of new Set(tagsToPush)) {
+			// Avoid duplicate latest if it's already in the loop
+			const registryTag = getRegistryTag(
+				currentRegistry,
+				builtImageName,
+				tag,
+			);
+			if (registryTag) {
+				commands.push(
+					getRegistryCommands(
+						currentRegistry,
+						builtImageName,
+						registryTag,
+					),
+				);
+			}
 		}
+
+		// 2. Dynamic Version from JSON
+		if (autoVersionFromJson && sourceType !== "docker") {
+			const buildDir = getBuildAppDirectory(application);
+			// Bash logic to extract version and push
+			
+			// We need to determine the registry tag prefix in bash or pre-calculate it?
+			// The tag suffix (version) is dynamic. The prefix is static.
+			const { registryUrl, imagePrefix, username } = currentRegistry;
+			const targetPrefix = imagePrefix || username;
+			const finalRegistry = registryUrl || "";
+			const repoName = extractRepositoryName(builtImageName);
+			
+			const baseImageTag = finalRegistry
+				? `${finalRegistry}/${targetPrefix}/${repoName}`
+				: `${targetPrefix}/${repoName}`;
+
+            commands.push(`
+echo "🔍 Checking for version.json in ${buildDir}"
+if [ -f "${buildDir}/version.json" ]; then
+    VERSION=$(grep -o '"version": *"[^"]*"' "${buildDir}/version.json" | head -1 | awk -F'"' '{print $4}')
+    if [ ! -z "$VERSION" ]; then
+        echo "✅ Found version: $VERSION"
+        FULL_TAG="${baseImageTag}:$VERSION"
+        echo "🏷️  Tagging with version: $VERSION"
+        docker tag ${builtImageName} $FULL_TAG || echo "❌ Error tagging version"
+        echo "fw  Pushing version tag: $FULL_TAG"
+        docker push $FULL_TAG || echo "❌ Error pushing version tag"
+    else
+        echo "⚠️  version.json found but could not parse version"
+    fi
+else
+    echo "⚠️  version.json not found, skipping version tag"
+fi
+`);
+		}
+	};
+
+	if (registry) {
+		processRegistry(registry, "Registry Swarm");
 	}
 	if (buildRegistry) {
-		const buildRegistryTag = getRegistryTag(buildRegistry, imageName);
-		if (buildRegistryTag) {
-			commands.push(`echo "🔑 [Enabled Build Registry]"`);
-			commands.push(
-				getRegistryCommands(buildRegistry, imageName, buildRegistryTag),
-			);
-			commands.push(
-				`echo "⚠️ INFO: After the build is finished, you need to wait a few seconds for the server to download the image and run the container."`,
-			);
-			commands.push(
-				`echo "📊 Check the Logs tab to see when the container starts running."`,
-			);
-		}
+		processRegistry(buildRegistry, "Build Registry");
+        commands.push(
+            `echo "⚠️ INFO: After the build is finished, you need to wait a few seconds for the server to download the image and run the container."`,
+        );
+        commands.push(
+            `echo "📊 Check the Logs tab to see when the container starts running."`,
+        );
 	}
 
 	if (rollbackRegistry && application.rollbackActive) {
@@ -57,16 +149,42 @@ export const uploadImageRemoteCommand = async (
 			deploymentId: deploymentId,
 		});
 
+		// Rollback logic is slightly different, it uses specific image from rollback.
+        // We probably don't want to double-push version tags to rollback registry if it's strictly for rollback history?
+        // But if user wants to store versions there, maybe.
+        // For now, I'll keep the original rollback logic which pushes the verified image.
+        // Actually, existing logic pushed `rollback.image`.
+        
 		const rollbackRegistryTag = getRegistryTag(
 			rollbackRegistry,
 			rollback?.image || "",
+            "latest" // Rollback typically targets specific hash or tag, but existing code logic used standard tag?
+            // Existing code: const rollbackRegistryTag = getRegistryTag(rollbackRegistry, rollback?.image || "");
+            // convert to new signature if I change getRegistryTag?
 		);
-		if (rollbackRegistryTag) {
-			commands.push(`echo "🔄 [Enabled Rollback Registry]"`);
-			commands.push(
-				getRegistryCommands(rollbackRegistry, imageName, rollbackRegistryTag),
-			);
-		}
+		
+        // Re-implement existing logic for rollback
+        // The existing logic passed `rollback?.image` to getRegistryTag.
+        // And `getRegistryTag` logic was `extractRepositoryName(imageName)`.
+        
+        // Let's modify `getRegistryTag` signature to accept an optional explicit tag override, 
+        // OR handle the splitting inside `getRegistryTag` if the input image has a tag.
+        
+        // I will update getRegistryTag to handle explicit tag properly.
+        
+        // ... (Existing implementation)
+        // commands.push(getRegistryCommands(rollbackRegistry, imageName, rollbackRegistryTag));
+        // Note: original code used `imageName` (which was appName:latest or dockerImage) as source for `docker tag`.
+        // And `rollbackRegistryTag` as target.
+
+        // I will preserve this logic but use `builtImageName`.
+        const simpleRollbackTag = getRegistryTag(rollbackRegistry, rollback?.image || "");
+        if (simpleRollbackTag) {
+            commands.push(`echo "🔄 [Enabled Rollback Registry]"`);
+            commands.push(
+                getRegistryCommands(rollbackRegistry, builtImageName, simpleRollbackTag),
+            );
+        }
 	}
 	try {
 		return commands.join("\n");
@@ -74,6 +192,7 @@ export const uploadImageRemoteCommand = async (
 		throw error;
 	}
 };
+
 /**
  * Extract the repository name from imageName by taking the last part after '/'
  * Examples:
@@ -85,17 +204,21 @@ export const uploadImageRemoteCommand = async (
  */
 const extractRepositoryName = (imageName: string): string => {
 	const lastSlashIndex = imageName.lastIndexOf("/");
-
-	// If no '/', return the imageName as is
-	if (lastSlashIndex === -1) {
-		return imageName;
+    let repo = imageName;
+	if (lastSlashIndex !== -1) {
+		repo = imageName.substring(lastSlashIndex + 1);
 	}
-
-	// Extract everything after the last '/'
-	return imageName.substring(lastSlashIndex + 1);
+    // Remove tag if present, to just get the repo name for tagging with new tags
+    // e.g. "myrepo:latest" -> "myrepo"
+    const colonIndex = repo.indexOf(":");
+    if (colonIndex !== -1) {
+        return repo.substring(0, colonIndex);
+    }
+    return repo;
 };
 
-export const getRegistryTag = (registry: Registry, imageName: string) => {
+// Updated signature: allow explicit tag
+export const getRegistryTag = (registry: Registry, imageName: string, explicitTag?: string) => {
 	const { registryUrl, imagePrefix, username } = registry;
 
 	// Extract the repository name (last part after '/')
@@ -104,10 +227,25 @@ export const getRegistryTag = (registry: Registry, imageName: string) => {
 	// Build the final tag using registry's username/prefix
 	const targetPrefix = imagePrefix || username;
 	const finalRegistry = registryUrl || "";
+    
+	// If explicit tag is provided, use it.
+	// If not, try to preserve the tag from imageName, otherwise default to empty (implicit latest in Docker context, but clean for string check)
+	let tag = "";
+	if (explicitTag) {
+		tag = explicitTag;
+	} else {
+		// Check if imageName has a tag
+		const colonIndex = imageName.lastIndexOf(":");
+		if (colonIndex !== -1 && imageName.lastIndexOf("/") < colonIndex) {
+			tag = imageName.substring(colonIndex + 1);
+		}
+	}
+
+	const suffix = tag ? `:${tag}` : "";
 
 	return finalRegistry
-		? `${finalRegistry}/${targetPrefix}/${repositoryName}`
-		: `${targetPrefix}/${repositoryName}`;
+		? `${finalRegistry}/${targetPrefix}/${repositoryName}${suffix}`
+		: `${targetPrefix}/${repositoryName}${suffix}`;
 };
 
 const getRegistryCommands = (

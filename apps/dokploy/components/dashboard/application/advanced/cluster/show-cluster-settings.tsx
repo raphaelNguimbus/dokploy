@@ -33,6 +33,7 @@ import {
 	SelectValue,
 } from "@/components/ui/select";
 import { api } from "@/utils/api";
+import { Switch } from "@/components/ui/switch";
 import { AddSwarmSettings } from "./modify-swarm-settings";
 
 interface Props {
@@ -43,6 +44,9 @@ interface Props {
 const AddRedirectchema = z.object({
 	replicas: z.number().min(1, "Replicas must be at least 1"),
 	registryId: z.string().optional(),
+	customImageName: z.string().optional(),
+	customImageTags: z.string().optional(),
+	autoVersionFromJson: z.boolean().optional(),
 });
 
 type AddCommand = z.infer<typeof AddRedirectchema>;
@@ -82,6 +86,9 @@ export const ShowClusterSettings = ({ id, type }: Props) => {
 			...(type === "application" && data && "registryId" in data
 				? {
 						registryId: data?.registryId || "",
+						customImageName: data?.customImageName || "",
+						customImageTags: data?.customImageTags || "",
+						autoVersionFromJson: data?.autoVersionFromJson || false,
 					}
 				: {}),
 			replicas: data?.replicas || 1,
@@ -94,7 +101,10 @@ export const ShowClusterSettings = ({ id, type }: Props) => {
 			form.reset({
 				...(type === "application" && data && "registryId" in data
 					? {
-							registryId: data?.registryId || "",
+							registryId: data.registryId || "",
+							customImageName: data.customImageName || "",
+							customImageTags: data.customImageTags || "",
+							autoVersionFromJson: data.autoVersionFromJson || false,
 						}
 					: {}),
 				replicas: data?.replicas || 1,
@@ -116,6 +126,9 @@ export const ShowClusterSettings = ({ id, type }: Props) => {
 							data?.registryId === "none" || !data?.registryId
 								? null
 								: data?.registryId,
+						customImageName: data.customImageName,
+						customImageTags: data.customImageTags,
+						autoVersionFromJson: data.autoVersionFromJson,
 					}
 				: {}),
 			replicas: data?.replicas,
@@ -206,6 +219,7 @@ export const ShowClusterSettings = ({ id, type }: Props) => {
 													<Select
 														onValueChange={field.onChange}
 														defaultValue={field.value}
+														value={field.value}
 													>
 														<SelectTrigger>
 															<SelectValue placeholder="Select a registry" />
@@ -227,6 +241,55 @@ export const ShowClusterSettings = ({ id, type }: Props) => {
 															</SelectGroup>
 														</SelectContent>
 													</Select>
+												</FormItem>
+											)}
+										/>
+										<FormField
+											control={form.control}
+											name="customImageName"
+											render={({ field }) => (
+												<FormItem>
+													<FormLabel>Custom Image Name (Optional)</FormLabel>
+													<FormControl>
+														<Input placeholder="my/image" {...field} />
+													</FormControl>
+													<FormMessage />
+												</FormItem>
+											)}
+										/>
+										<FormField
+											control={form.control}
+											name="customImageTags"
+											render={({ field }) => (
+												<FormItem>
+													<FormLabel>
+														Custom Image Tags (Optional, comma separated)
+													</FormLabel>
+													<FormControl>
+														<Input placeholder="v1,prod" {...field} />
+													</FormControl>
+													<FormMessage />
+												</FormItem>
+											)}
+										/>
+										<FormField
+											control={form.control}
+											name="autoVersionFromJson"
+											render={({ field }) => (
+												<FormItem className="flex flex-row items-center justify-between rounded-lg border p-3 shadow-sm">
+													<div className="space-y-0.5">
+														<FormLabel>Auto Version from JSON</FormLabel>
+														<div className="text-[0.8rem] text-muted-foreground">
+															Automatically detect version from version.json
+															(NGBV)
+														</div>
+													</div>
+													<FormControl>
+														<Switch
+															checked={field.value}
+															onCheckedChange={field.onChange}
+														/>
+													</FormControl>
 												</FormItem>
 											)}
 										/>

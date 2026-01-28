@@ -51,6 +51,7 @@ export const user = pgTable("user", {
 	// Admin
 	role: text("role").notNull().default("user"),
 	// Metrics
+	enableLogRotation: boolean("enableLogRotation").notNull().default(false),
 	enablePaidFeatures: boolean("enablePaidFeatures").notNull().default(false),
 	allowImpersonation: boolean("allowImpersonation").notNull().default(false),
 	stripeCustomerId: text("stripeCustomerId"),

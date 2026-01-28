@@ -52,6 +52,7 @@ export const domains = pgTable("domain", {
 	),
 	certificateType: certificateType("certificateType").notNull().default("none"),
 	internalPath: text("internalPath").default("/"),
+	internalHttps: boolean("internalHttps").notNull().default(false),
 	stripPath: boolean("stripPath").notNull().default(false),
 });
 
@@ -85,6 +86,7 @@ export const apiCreateDomain = createSchema.pick({
 	domainType: true,
 	previewDeploymentId: true,
 	internalPath: true,
+	internalHttps: true,
 	stripPath: true,
 });
 
@@ -117,6 +119,7 @@ export const apiUpdateDomain = createSchema
 		serviceName: true,
 		domainType: true,
 		internalPath: true,
+		internalHttps: true,
 		stripPath: true,
 	})
 	.merge(createSchema.pick({ domainId: true }).required());

@@ -55,6 +55,7 @@ export const domain = z
 			.transform((val) => val.trim()),
 		path: z.string().min(1).optional(),
 		internalPath: z.string().optional(),
+		internalHttps: z.boolean().optional(),
 		stripPath: z.boolean().optional(),
 		port: z
 			.number()
@@ -194,6 +195,7 @@ export const AddDomain = ({ id, type, domainId = "", children }: Props) => {
 			host: "",
 			path: undefined,
 			internalPath: undefined,
+			internalHttps: false,
 			stripPath: false,
 			port: undefined,
 			https: false,
@@ -218,6 +220,7 @@ export const AddDomain = ({ id, type, domainId = "", children }: Props) => {
 				/* Convert null to undefined */
 				path: data?.path || undefined,
 				internalPath: data?.internalPath || undefined,
+				internalHttps: data?.internalHttps || false,
 				stripPath: data?.stripPath || false,
 				port: data?.port || undefined,
 				certificateType: data?.certificateType || undefined,
@@ -232,6 +235,7 @@ export const AddDomain = ({ id, type, domainId = "", children }: Props) => {
 				host: "",
 				path: undefined,
 				internalPath: undefined,
+				internalHttps: false,
 				stripPath: false,
 				port: undefined,
 				https: false,
@@ -589,6 +593,28 @@ export const AddDomain = ({ id, type, domainId = "", children }: Props) => {
 											</FormItem>
 										);
 									}}
+								/>
+
+								<FormField
+									control={form.control}
+									name="internalHttps"
+									render={({ field }) => (
+										<FormItem className="flex flex-row items-center justify-between p-3 border rounded-lg shadow-sm">
+											<div className="space-y-0.5">
+												<FormLabel>Internal HTTPS</FormLabel>
+												<FormDescription>
+													Enable if the internal service listens on HTTPS
+												</FormDescription>
+												<FormMessage />
+											</div>
+											<FormControl>
+												<Switch
+													checked={field.value}
+													onCheckedChange={field.onChange}
+												/>
+											</FormControl>
+										</FormItem>
+									)}
 								/>
 
 								<FormField

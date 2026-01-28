@@ -24,7 +24,7 @@ export const getDockerCommand = (application: ApplicationNested) => {
 	const dockerFilePath = getBuildAppDirectory(application);
 
 	try {
-		const image = `${appName}`;
+		const image = application.customImageName || `${appName}`;
 
 		const defaultContextPath =
 			dockerFilePath.substring(0, dockerFilePath.lastIndexOf("/") + 1) || ".";

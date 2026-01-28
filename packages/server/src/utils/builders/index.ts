@@ -186,9 +186,9 @@ export const mechanizeDockerContainer = async (
 };
 
 const getImageName = (application: ApplicationNested) => {
-	const { appName, sourceType, dockerImage, registry, buildRegistry } =
+	const { appName, sourceType, dockerImage, registry, buildRegistry, customImageName } =
 		application;
-	const imageName = `${appName}:latest`;
+	const imageName = customImageName || `${appName}:latest`;
 	if (sourceType === "docker") {
 		return dockerImage || "ERROR-NO-IMAGE-PROVIDED";
 	}
