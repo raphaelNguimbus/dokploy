@@ -107,7 +107,6 @@ export const uploadImageRemoteCommand = async (
 				searchDirs.unshift(buildDir);
 			}
 
-			// Remove duplicates
 			const uniqueDirs = [...new Set(searchDirs)];
 
 			// Bash logic to extract version and push
@@ -125,43 +124,79 @@ export const uploadImageRemoteCommand = async (
 			// Construct bash array/checks
 			let bashSearchBlock = "";
 			for (const dir of uniqueDirs) {
-				// escaping windows paths if necessary? paths usually come with forward slashes from `path` on linux/mac, but on windows server it handles it?
-				// `path` module adheres to OS. If server is windows, paths have backslashes.
-				// Bash in git bash or wsl handles forward slashes. Backslashes need escaping.
-				// `dokploy` generally runs in linux containers or linux envs, but user has windows OS.
-				// However, the `application.serverId` implies where the command runs.
-				// If local (no serverId), it runs on the host. If host is windows, we need to be careful.
-				// `paths` constants should handle this?
-				// But let's assume standard posix paths for the `mkdir -p` etc used elsewhere.
-				// We can normalize to forward slashes for bash compatibility just in case.
-				const normalizedDir = dir.replace(/\\/g, "/");
+				// Normalize path for bash on Windows (Git Bash / Cygwin)
+				// 1. Replace backslashes with forward slashes
+				let normalizedDir = dir.replace(/\\/g, "/");
+
+				// 2. Windows-Specific: Convert "D:/..." to "/mnt/d/..." for Bash compatibility (Git Bash/WSL)
+				// This matches "D:" or "c:" at the start.
+				// SAFETY: This condition is FALSE on Linux/Prod (paths start with /), so it's safe to keep.
+				if (/^[a-zA-Z]:/.test(normalizedDir)) {
+					const driveLetter = normalizedDir.charAt(0).toLowerCase();
+					// Remove "D:" and prepend "/mnt/d"
+					normalizedDir = `/mnt/${driveLetter}${normalizedDir.slice(2)}`;
+				}
+
 				bashSearchBlock += `
-    if [ -z "$VERSION" ] && [ -f "${normalizedDir}/version.json" ]; then
-        echo "🔍 Checking for version.json in ${normalizedDir}"
-        FOUND_VERSION=$(grep -o '"version": *"[^"]*"' "${normalizedDir}/version.json" | head -1 | awk -F'"' '{print $4}')
-        if [ ! -z "$FOUND_VERSION" ]; then
-            VERSION=$FOUND_VERSION
-            echo "✅ Found version: $VERSION in ${normalizedDir}"
-        fi
-    fi
-`;
+					echo "---------------------------------------------------"
+					echo "🔍 Checking dir (normalized): ${normalizedDir}"
+					
+					if [ -d "${normalizedDir}" ]; then
+						echo "📂 Directory exists."
+					else
+						echo "❌ Directory does not exist or is not a directory: ${normalizedDir}"
+					fi
+
+					if [ -z "$VERSION" ] && [ -f "${normalizedDir}/version.json" ]; then
+						echo "📄 Found version.json at: ${normalizedDir}/version.json"
+
+						# Workaround for broken command substitution: Use files and xargs
+						# Workaround: Use full path directly via TS interpolation to avoid shell variable issues
+						rm -f "${normalizedDir}/extracted_version.txt"
+						
+						echo "DEBUG: Checking grep matches on ${normalizedDir}/version.json"
+						grep --color=never '"version":' "${normalizedDir}/version.json" || echo "DEBUG: Grep failed"
+						
+						# Extract direct to file using cut/tr (no shell variables)
+						grep --color=never '"version":' "${normalizedDir}/version.json" | head -n 1 | cut -d: -f2 | tr -d '" ,\r' > "${normalizedDir}/extracted_version.txt"
+						
+						if [ -s "${normalizedDir}/extracted_version.txt" ]; then
+							echo "✅ Extracted version to file."
+							# Tag and Push using xargs to avoid variable capture issues
+							# We construct the target tag dynamically
+							cat "${normalizedDir}/extracted_version.txt" | xargs -I {} docker tag ${builtImageName} "${baseImageTag}:{}" || echo "❌ Error tagging version"
+							
+							echo "fw  Pushing version tag..."
+							cat "${normalizedDir}/extracted_version.txt" | xargs -I {} docker push "${baseImageTag}:{}" || echo "❌ Error pushing version tag"
+							
+							# Cleanup - commented out for debugging
+							rm -f "${normalizedDir}/extracted_version.txt"
+						else
+							echo "⚠️  Found file but could not extract version (file empty)."
+							head -n 5 "${normalizedDir}/version.json"
+						fi
+					else
+						echo "❌ version.json NOT found at: ${normalizedDir}/version.json"
+					fi
+				`;
 			}
 
 			commands.push(`
-# Auto Version Check
-VERSION=""
-${bashSearchBlock}
+				# Auto Version Check
+				echo "🚀 Starting Auto Version Check..."
+				VERSION=""
+				${bashSearchBlock}
 
-if [ ! -z "$VERSION" ]; then
-    FULL_TAG="${baseImageTag}:$VERSION"
-    echo "🏷️  Tagging with version: $VERSION"
-    docker tag ${builtImageName} $FULL_TAG || echo "❌ Error tagging version"
-    echo "fw  Pushing version tag: $FULL_TAG"
-    docker push $FULL_TAG || echo "❌ Error pushing version tag"
-else
-    echo "⚠️  version.json not found in search paths, skipping version tag"
-fi
-`);
+				if [ ! -z "$VERSION" ]; then
+					FULL_TAG="${baseImageTag}:$VERSION"
+					echo "🏷️  Tagging with version: $VERSION"
+					docker tag ${builtImageName} $FULL_TAG || echo "❌ Error tagging version"
+					echo "fw  Pushing version tag: $FULL_TAG"
+					docker push $FULL_TAG || echo "❌ Error pushing version tag"
+				else
+					echo "⚠️  version.json not found in search paths, skipping version tag"
+				fi`
+			);
 		}
 	};
 
