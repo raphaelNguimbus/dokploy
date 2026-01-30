@@ -198,9 +198,9 @@ export const projectRouter = createTRPCRouter({
 				accessedEnvironments.length === 0
 					? sql`false`
 					: sql`${environments.environmentId} IN (${sql.join(
-							accessedEnvironments.map((envId) => sql`${envId}`),
-							sql`, `,
-						)})`;
+						accessedEnvironments.map((envId) => sql`${envId}`),
+						sql`, `,
+					)})`;
 
 			return await db.query.projects.findMany({
 				where: and(
@@ -219,28 +219,91 @@ export const projectRouter = createTRPCRouter({
 									applications.applicationId,
 									accessedServices,
 								),
+								columns: {
+									applicationId: true,
+									name: true,
+									appName: true,
+									applicationStatus: true,
+									createdAt: true,
+									description: true,
+									serverId: true,
+								},
 								with: { domains: true },
 							},
 							mariadb: {
 								where: buildServiceFilter(mariadb.mariadbId, accessedServices),
+								columns: {
+									mariadbId: true,
+									name: true,
+									appName: true,
+									applicationStatus: true,
+									createdAt: true,
+									description: true,
+									serverId: true,
+								},
 							},
 							mongo: {
 								where: buildServiceFilter(mongo.mongoId, accessedServices),
+								columns: {
+									mongoId: true,
+									name: true,
+									appName: true,
+									applicationStatus: true,
+									createdAt: true,
+									description: true,
+									serverId: true,
+								},
 							},
 							mysql: {
 								where: buildServiceFilter(mysql.mysqlId, accessedServices),
+								columns: {
+									mysqlId: true,
+									name: true,
+									appName: true,
+									applicationStatus: true,
+									createdAt: true,
+									description: true,
+									serverId: true,
+								},
 							},
 							postgres: {
 								where: buildServiceFilter(
 									postgres.postgresId,
 									accessedServices,
 								),
+								columns: {
+									postgresId: true,
+									name: true,
+									appName: true,
+									applicationStatus: true,
+									createdAt: true,
+									description: true,
+									serverId: true,
+								},
 							},
 							redis: {
 								where: buildServiceFilter(redis.redisId, accessedServices),
+								columns: {
+									redisId: true,
+									name: true,
+									appName: true,
+									applicationStatus: true,
+									createdAt: true,
+									description: true,
+									serverId: true,
+								},
 							},
 							compose: {
 								where: buildServiceFilter(compose.composeId, accessedServices),
+								columns: {
+									composeId: true,
+									name: true,
+									appName: true,
+									composeStatus: true,
+									createdAt: true,
+									description: true,
+									serverId: true,
+								},
 								with: { domains: true },
 							},
 						},
@@ -255,16 +318,84 @@ export const projectRouter = createTRPCRouter({
 				environments: {
 					with: {
 						applications: {
+							columns: {
+								applicationId: true,
+								name: true,
+								appName: true,
+								applicationStatus: true,
+								createdAt: true,
+								description: true,
+								serverId: true,
+							},
 							with: {
 								domains: true,
 							},
 						},
-						mariadb: true,
-						mongo: true,
-						mysql: true,
-						postgres: true,
-						redis: true,
+						mariadb: {
+							columns: {
+								mariadbId: true,
+								name: true,
+								appName: true,
+								applicationStatus: true,
+								createdAt: true,
+								description: true,
+								serverId: true,
+							},
+						},
+						mongo: {
+							columns: {
+								mongoId: true,
+								name: true,
+								appName: true,
+								applicationStatus: true,
+								createdAt: true,
+								description: true,
+								serverId: true,
+							},
+						},
+						mysql: {
+							columns: {
+								mysqlId: true,
+								name: true,
+								appName: true,
+								applicationStatus: true,
+								createdAt: true,
+								description: true,
+								serverId: true,
+							},
+						},
+						postgres: {
+							columns: {
+								postgresId: true,
+								name: true,
+								appName: true,
+								applicationStatus: true,
+								createdAt: true,
+								description: true,
+								serverId: true,
+							},
+						},
+						redis: {
+							columns: {
+								redisId: true,
+								name: true,
+								appName: true,
+								applicationStatus: true,
+								createdAt: true,
+								description: true,
+								serverId: true,
+							},
+						},
 						compose: {
+							columns: {
+								composeId: true,
+								name: true,
+								appName: true,
+								composeStatus: true,
+								createdAt: true,
+								description: true,
+								serverId: true,
+							},
 							with: {
 								domains: true,
 							},
@@ -370,7 +501,7 @@ export const projectRouter = createTRPCRouter({
 				if (
 					input.duplicateInSameProject &&
 					sourceEnvironment?.project.organizationId !==
-						ctx.session.activeOrganizationId
+					ctx.session.activeOrganizationId
 				) {
 					throw new TRPCError({
 						code: "UNAUTHORIZED",
@@ -382,13 +513,13 @@ export const projectRouter = createTRPCRouter({
 				const targetProject = input.duplicateInSameProject
 					? sourceEnvironment
 					: await createProject(
-							{
-								name: input.name,
-								description: input.description,
-								env: sourceEnvironment?.project.env,
-							},
-							ctx.session.activeOrganizationId,
-						).then((value) => value.environment);
+						{
+							name: input.name,
+							description: input.description,
+							env: sourceEnvironment?.project.env,
+						},
+						ctx.session.activeOrganizationId,
+					).then((value) => value.environment);
 
 				console.log("targetProject", targetProject);
 
@@ -730,7 +861,7 @@ function buildServiceFilter(
 	return accessedServices.length === 0
 		? sql`false`
 		: sql`${fieldName} IN (${sql.join(
-				accessedServices.map((serviceId) => sql`${serviceId}`),
-				sql`, `,
-			)})`;
+			accessedServices.map((serviceId) => sql`${serviceId}`),
+			sql`, `,
+		)})`;
 }
