@@ -1,6 +1,6 @@
 {
-  "id": "5958b029-1fb9-4a44-be24-c96b4e899b84",
-  "prevId": "7b077373-c084-4232-864e-8d52adaa9258",
+  "id": "f20ee93f-e2e5-4840-abe3-e93fd97bcb87",
+  "prevId": "5958b029-1fb9-4a44-be24-c96b4e899b84",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1190,6 +1190,25 @@
           "type": "text",
           "primaryKey": false,
           "notNull": false
+        },
+        "customImageName": {
+          "name": "customImageName",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "customImageTags": {
+          "name": "customImageTags",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "autoVersionFromJson": {
+          "name": "autoVersionFromJson",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         },
         "customGitUrl": {
           "name": "customGitUrl",
@@ -2812,6 +2831,13 @@
           "primaryKey": false,
           "notNull": false,
           "default": "'/'"
+        },
+        "internalHttps": {
+          "name": "internalHttps",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         },
         "stripPath": {
           "name": "stripPath",
@@ -6413,6 +6439,13 @@
           "primaryKey": false,
           "notNull": true,
           "default": "'user'"
+        },
+        "enableLogRotation": {
+          "name": "enableLogRotation",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         },
         "enablePaidFeatures": {
           "name": "enablePaidFeatures",

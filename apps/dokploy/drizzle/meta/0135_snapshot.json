@@ -1,5 +1,5 @@
 {
-  "id": "fd639968-0019-4b29-ac17-780914bd97c4",
+  "id": "7b077373-c084-4232-864e-8d52adaa9258",
   "prevId": "e3db98b3-00ba-4ee2-8143-639bccb258f2",
   "version": "7",
   "dialect": "postgresql",
@@ -2801,13 +2801,6 @@
           "notNull": false,
           "default": "'/'"
         },
-        "internalHttps": {
-          "name": "internalHttps",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
         "stripPath": {
           "name": "stripPath",
           "type": "boolean",
@@ -4511,6 +4504,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "pushoverId": {
+          "name": "pushoverId",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "organizationId": {
           "name": "organizationId",
           "type": "text",
@@ -4624,6 +4623,19 @@
           "onDelete": "cascade",
           "onUpdate": "no action"
         },
+        "notification_pushoverId_pushover_pushoverId_fk": {
+          "name": "notification_pushoverId_pushover_pushoverId_fk",
+          "tableFrom": "notification",
+          "tableTo": "pushover",
+          "columnsFrom": [
+            "pushoverId"
+          ],
+          "columnsTo": [
+            "pushoverId"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
         "notification_organizationId_organization_id_fk": {
           "name": "notification_organizationId_organization_id_fk",
           "tableFrom": "notification",
@@ -4678,6 +4690,56 @@
           "primaryKey": false,
           "notNull": true,
           "default": 3
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.pushover": {
+      "name": "pushover",
+      "schema": "",
+      "columns": {
+        "pushoverId": {
+          "name": "pushoverId",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "userKey": {
+          "name": "userKey",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "apiToken": {
+          "name": "apiToken",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "priority": {
+          "name": "priority",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "retry": {
+          "name": "retry",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "expire": {
+          "name": "expire",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {},
@@ -6340,13 +6402,6 @@
           "notNull": true,
           "default": "'user'"
         },
-        "enableLogRotation": {
-          "name": "enableLogRotation",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
-        },
         "enablePaidFeatures": {
           "name": "enablePaidFeatures",
           "type": "boolean",
@@ -6879,6 +6934,7 @@
         "email",
         "gotify",
         "ntfy",
+        "pushover",
         "custom",
         "lark"
       ]
